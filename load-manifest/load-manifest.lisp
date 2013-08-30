@@ -41,9 +41,14 @@
     (:nicknames :ros-load)
   (:export :load-manifest :load-system :asdf-paths-to-add :*current-ros-package*
            :asdf-ros-search :asdf-ros-pkg-search :ros-package-path :ros-home :rospack)
-  (:use :cl))
+  (:use :cl :trivial-timers))
 
 (in-package :ros-load-manifest)
+
+(defun getenv (variable-name)
+  #+sbcl (sb-ext:posix-getenv variable-name)
+  #+allegro (excl.osi:getenv variable-name)
+  #-(or allegro sbcl) (error "GETENV not implemented for this Lisp!"))
 
 (defvar *current-ros-package* nil
   "A string naming the current package.  This is used in the asdf-ros-search search method.")
@@ -122,10 +127,10 @@
 (defun wait-for-file-deleted (file msg &optional delete-timeout)
   "Waits for `file' to be removed or, when `timeout' is set and
 expires, deletes the file."
-  (let ((timer (sb-ext:make-timer
+  (let ((timer (make-timer
                 (lambda () (delete-file file)))))
     (when delete-timeout
-      (sb-ext:schedule-timer timer delete-timeout))
+      (schedule-timer timer delete-timeout))
     (unwind-protect
          (let ((print-msg t))
            (loop while (probe-file file) do
@@ -134,7 +139,7 @@ expires, deletes the file."
                (setf print-msg nil))
              (sleep 0.5)))
       (when delete-timeout
-        (sb-ext:unschedule-timer timer)))))
+        (unschedule-timer timer)))))
 
 (defun compilation-marker-file-path (component)
   (merge-pathnames (make-pathname
@@ -183,9 +188,20 @@ expires, deletes the file."
     (call-next-method)))
 
 (defun ros-home ()
-  (or (sb-ext:posix-getenv "ROS_HOME")
+  (or (getenv "ROS_HOME")
       (merge-pathnames (make-pathname :directory '(:relative ".ros"))
                        (user-homedir-pathname))))
+
+(defun run-program (command args &key search output error)
+  "Run COMMAND with ARGS. OUTPUT and ERROR are string output streams
+to write stdout and stderr to, respectively. Returns the exit code."
+  (declare (ignorable search))
+  #+sbcl (let ((proc (sb-ext:run-program command args :search search :output output :error error)))
+		   (sb-ext:process-exit-code proc))
+  #+allegro (let ((real-command (format nil "~a~{ ~a~}" command args)))
+			  (excl.osi::run-shell-command real-command :output output :error-output error))
+  #-(or sbcl allegro) (error 'simple-error "RUN-PROGRAM is not defined for this Lisp.")
+  )
 
 (defun rospack (&rest cmd-args)
   (labels ((split-str (seq &optional (separator #\Newline))
@@ -197,8 +213,7 @@ expires, deletes the file."
                (doit 0))))
     (let* ((str (make-string-output-stream))
            (error-str (make-string-output-stream))
-           (proc (sb-ext:run-program "rospack" cmd-args :search t :output str :error error-str))
-           (exit-code (sb-ext:process-exit-code proc)))
+           (exit-code (run-program "rospack" cmd-args :search t :output str :error error-str)))
       (if (zerop exit-code)
           (split-str (get-output-stream-string str))
           (error "rospack ~{~a~^ ~} returned ~a with stderr '~a'" 
@@ -232,7 +247,7 @@ expires, deletes the file."
   (let ((asdf-path (merge-pathnames "asdf/" path)))
     (when (probe-file asdf-path) asdf-path)))
 
-(defun asdf-ros-search (def &aux (debug-print (sb-ext:posix-getenv "ROSLISP_LOAD_DEBUG")))
+(defun asdf-ros-search (def &aux (debug-print (getenv "ROSLISP_LOAD_DEBUG")))
   "An ASDF search method for ros packages.  When *current-ros-package*
 is a nonempty string, it uses rospack to generate the list of
 depended-upon packages, with the current one at the front.  It then
@@ -250,8 +265,8 @@ package."
       (when debug-print (format t "~&asdf-ros-search not invoked since *current-ros-package* is ~a" *current-ros-package*))))
 
 (asdf:initialize-source-registry
- (let ((roslisp-package-directories (sb-posix:getenv "ROSLISP_PACKAGE_DIRECTORIES"))
-       (ros-package-path (sb-posix:getenv "ROS_PACKAGE_PATH")))
+ (let ((roslisp-package-directories (getenv "ROSLISP_PACKAGE_DIRECTORIES"))
+       (ros-package-path (getenv "ROS_PACKAGE_PATH")))
    `(:source-registry
      ,@(when roslisp-package-directories
          (mapcan (lambda (path)
