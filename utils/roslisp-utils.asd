@@ -7,4 +7,7 @@
    (:file "float-bytes" :depends-on ("utils"))
    (:file "extended-reals")
    (:file "queue" :depends-on ("utils" "extended-reals"))
-   (:file "hash-utils" :depends-on ("utils"))))
+   (:file "hash-utils" :depends-on ("utils")))
+  
+  :depends-on
+  (:bordeaux-threads))

@@ -53,7 +53,7 @@
   (:use :cl 
 	:roslisp-utils
 	:roslisp-extended-reals
-	:sb-thread))
+	:bordeaux-threads))
 
 (in-package :roslisp-queue)
 
@@ -75,10 +75,10 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
          (queue
            (create-queue :head head
                          :tail tail
-                         :lock (make-mutex :name "queue lock")
+                         :lock (make-recursive-lock "queue lock")
                          :max-size max-size
                          :queue-size (length head)
-                         :read-cv (make-waitqueue :name "queue reader waitqueue"))))
+                         :read-cv (make-condition-variable :name "queue reader waitqueue"))))
     queue))
 
 (defun queue-empty (queue)
@@ -87,7 +87,7 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
 
 (defun enqueue (item q)
   "enqueue ITEM QUEUE.  Add ITEM to the end of the QUEUE.  If any dequeue-wait calls are waiting, one of them will wake up.  If MAX-SIZE is exceeded, dequeue until not.  Return the number of dropped items."
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (incf (queue-size q))
     (let ((new-pair (list item))
 	  (num-dropped 0))

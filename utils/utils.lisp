@@ -39,7 +39,7 @@
 
 
 (defpackage roslisp-utils
-  (:use :cl :sb-thread)
+  (:use :cl :bordeaux-threads)
   (:export
    :mvbind
    :dbind
@@ -260,6 +260,7 @@ Note that despite the name, this is not like with-accessors or with-slots in tha
   ;; Sbcl's sleep does not respect deadlines which causes severe
   ;; problems with CRAM. We don't use it directly. We explicitly take
   ;; into account deadlines.
+  #+sbcl
   (let* ((current-time (get-internal-real-time))
          (time-to-run (time-to-run l))
          (deadline-seconds sb-impl::*deadline-seconds*)
@@ -277,7 +278,13 @@ Note that despite the name, this is not like with-accessors or with-slots in tha
                 (setf time-to-run (/ (float (- stop-time (get-internal-real-time)) 0.0d0)
                                      (float internal-time-units-per-second 0.0d0)))
                 (when (plusp time-to-run)
-                  (go :retry))))))))
+                  (go :retry)))))))
+  #-sbcl
+  (let* ((current-time (get-internal-real-time))
+         (time-to-run (time-to-run l))
+         (stop-time (- time-to-run current-time)))
+    (when (< current-time time-to-run)
+	  (sleep (/ stop-time internal-time-units-per-second)))))
 
 (defun run-and-increment-delay (l d)
   (let ((next-time (+ (time-to-run l) (* d internal-time-units-per-second))))
@@ -331,13 +338,13 @@ If FN is a symbol, it's replaced by (function FN).
     (setq name `',fn))
   (let ((thread (gensym))
 	(fn (if (symbolp fn) `#',fn fn)))
-    `(let ((,thread (sb-thread:make-thread ,fn :name ,name)))
+    `(let ((,thread (make-thread ,fn :name ,name)))
        (unwind-protect
 	    (progn ,@body)
-	 (sb-thread:terminate-thread ,thread)))))
+	 (destroy-thread ,thread)))))
 
 (defvar *do-every-nth-table* (make-hash-table))
-(defvar *do-every-nth-lock* (make-mutex :name "do-every-nth"))
+(defvar *do-every-nth-lock* (make-lock "do-every-nth"))
 
 (defun counter-value (id)
   (with-mutex (*do-every-nth-lock*)
