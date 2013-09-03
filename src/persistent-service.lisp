@@ -36,8 +36,8 @@
    (service-name :initarg :service-name)
    (service-type :initarg :service-type)
    (lock :reader persistent-service-lock
-         :initform (sb-thread:make-mutex
-                    :name (symbol-name (gensym "PERSISTENT-SERVICE-LOCK"))))))
+         :initform (make-lock
+                    (symbol-name (gensym "PERSISTENT-SERVICE-LOCK"))))))
 
 (defgeneric call-persistent-service (service &rest request)
   (:method ((service persistent-service) &rest request)
@@ -46,7 +46,7 @@
       (block nil
         (loop do
           (restart-case
-              (sb-thread:with-mutex (lock)
+              (with-lock-held (lock)
                 (cond ((and (eql (length request) 1)
                             (typep (car request) request-type))
                        (return
@@ -71,7 +71,8 @@
   called, NIL otherwise.")
   (:method ((service persistent-service))
     (with-slots (socket) service
-      (and socket (socket-open-p socket)))))
+      (and socket ;;(socket-open-p socket)
+		   ))))
 
 (defgeneric establish-persistent-service-connection (service)
   (:method ((service persistent-service))

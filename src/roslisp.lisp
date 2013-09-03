@@ -41,16 +41,17 @@
 (defpackage :roslisp
   (:use 
    :cl
-   :sb-bsd-sockets
-   :sb-sys
-   :sb-thread
    :s-xml-rpc
+   :bordeaux-threads
+   :trivial-timers
    :roslisp-extended-reals
    :roslisp-queue
    :roslisp-utils
    :roslisp-msg-protocol
    :ros-load-manifest
    :std_srvs-srv
+   :usocket
+   :trivial-gray-streams
    )
   (:export
    :msg-slot-value
@@ -157,6 +158,30 @@
 
 (in-package :roslisp)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Utilities for POSIX functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun getenv (variable-name)
+  #+sbcl (sb-ext:posix-getenv variable-name)
+  #+allegro (excl.osi:getenv variable-name)
+  #-(or allegro sbcl) (error "GETENV not implemented for this Lisp!"))
+
+(defun run-program (command args &key search output error)
+  "Run COMMAND with ARGS. OUTPUT and ERROR are string output streams
+to write stdout and stderr to, respectively. Returns the exit code."
+  (declare (ignorable search))
+  #+sbcl (let ((proc (sb-ext:run-program command args :search search :output output :error error)))
+		   (sb-ext:process-exit-code proc))
+  #+allegro (let ((real-command (format nil "~a~{ ~a~}" command args)))
+			  (multiple-value-bind (stdout stderr status) (excl.osi:command-output real-command :whole t)
+				(when output
+				  (format output "~a" stdout))
+				(when error
+				  (format error "~a" stderr))
+				status))
+  #-(or sbcl allegro) (error 'simple-error "RUN-PROGRAM is not defined for this Lisp.")
+  )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; ROS Node state
@@ -177,8 +202,8 @@
 (defvar *publications* nil "Hashtable from topic name to list of subscriber-connections")
 (defvar *subscriptions* nil "Hashtable from topic name to object of type subscription")
 (defvar *services* nil "Hashtable from service name to object of type service")
-(defvar *ros-lock* (make-mutex :name "API-wide lock for all operations that affect/are affected by state of node"))
-(defvar *debug-stream-lock* (make-mutex :name "API-wide lock for the debugging output stream."))
+(defvar *ros-lock* (make-recursive-lock "API-wide lock for all operations that affect/are affected by state of node"))
+(defvar *debug-stream-lock* (make-lock "API-wide lock for the debugging output stream."))
 (defvar *running-from-command-line* nil "True iff running ROS node script from command line (noninteractively)")
 (defvar *broken-socket-streams* nil "Used by TCPROS to keep track of sockets that have died and shouldn't be written to any more.")
 (defvar *namespace* "/" "Dynamic variable that holds the current namespace.  Bound when node starts, and by in-namespace")
@@ -187,7 +212,7 @@
 (defvar *remapped-names* nil "Hash from strings to strings containing names that have been remapped on the command line")
 (defvar *debug-stream* t "Stream to which to print debug messages.  Defaults to standard out.")
 (defvar *break-on-socket-errors* nil "If true, then any error on a socket will cause a (continuable) break")
-(defvar *debug-level* 2 "Controls the behavior of ros-debug and others.  The default value of 2 means print info and above.  1 would be everything.  4 would be warnings and above, etc.")
+(defvar *debug-level* 1 "Controls the behavior of ros-debug and others.  The default value of 2 means print info and above.  1 would be everything.  4 would be warnings and above, etc.")
 (defvar *last-clock* nil)
 (defvar *use-sim-time* nil)
 (defvar *deserialization-threads* nil "List of threads that deserialize messages from sockets into topic queues.  These have to be terminated explicitly when we shutdown (because they may be stuck in a blocking read).")

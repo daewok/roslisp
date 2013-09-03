@@ -48,18 +48,18 @@
 (defun with-function-timeout (expires body-fun)
   "throws function-timeout error when call takes longer than expires arg"
   (flet ((timeout-fun () (error 'function-timeout)))
-    (let ((timer (sb-ext:make-timer #'timeout-fun)))
-      (sb-ext:schedule-timer timer expires)
+    (let ((timer (make-timer #'timeout-fun)))
+      (schedule-timer timer expires)
       (unwind-protect
            (funcall body-fun)
-        (sb-ext:unschedule-timer timer)))))
+        (unschedule-timer timer)))))
 
 (defun get-ros-log-location (name)
 
   ;; Tries various possibilities in order of decreasing priority
-  (let ((log-dir (sb-ext:posix-getenv "ROS_LOG_DIR"))
-        (ros-home-dir (sb-ext:posix-getenv "ROS_HOME"))
-        (home-dir (sb-ext:posix-getenv "HOME")))
+  (let ((log-dir (getenv "ROS_LOG_DIR"))
+        (ros-home-dir (getenv "ROS_HOME"))
+        (home-dir (getenv "HOME")))
     (or *ros-log-location* 
         (merge-pathnames
          (pathname (format nil "~a-~a.log"
@@ -138,11 +138,11 @@
     (vector (ip-address-string (coerce address 'list)))))
 
 (defun lookup-hostname-ip-address (hostname)
-  (host-ent-address (get-host-by-name hostname)))
+  (usocket::get-host-by-name hostname))
 
 (defun hostname ()
-  (or (sb-ext:posix-getenv "ROS_HOSTNAME")
-      (sb-ext:posix-getenv "ROS_IP")
+  (or (getenv "ROS_HOSTNAME")
+      (getenv "ROS_IP")
       (run-external "hostname")))
 
 (defun get-topic-class-name (topic)
@@ -166,11 +166,10 @@
 
 (defun run-external (cmd &rest args)
   (let ((str (make-string-output-stream)))
-    (let ((proc (sb-ext:run-program cmd args :search t :output str :wait nil)))
-      (sb-ext:process-wait proc)
-      (if (zerop (sb-ext:process-exit-code proc))
-	  (first (last (tokens (get-output-stream-string str) :separators '(#\Newline))))
-	  (error "Received exit code ~a when running external process ~a with args ~a" (sb-ext:process-exit-code proc) cmd args)))))
+	(let ((exit-code (run-program cmd args :search t :output str)))
+	  (if (zerop exit-code)
+		  (first (last (tokens (get-output-stream-string str) :separators '(#\Newline))))
+		  (error "Received exit code ~a when running external process ~a with args ~a" exit-code cmd args)))))
       
 
 

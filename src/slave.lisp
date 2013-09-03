@@ -52,12 +52,16 @@
 ;; case sensitive and Lisp symbols are not, by default.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-
+(defun unix-getpid ()
+  #+sbcl (sb-unix:unix-getpid)
+  #+allegro (excl.osi:getpid)
+  #-(or allegro sbcl)
+  (error 'simple-error "UNIX-GETPID not implemented for this Lisp."))
 
 (defun |getPid| (caller-id)
   "getPid XML-RPC method.  Takes no arguments, returns 1 upon success."
   (declare (ignore caller-id))
-  (let ((pid (sb-unix:unix-getpid)))
+  (let ((pid (unix-getpid)))
     (list 1 (format nil "PID is ~a" pid) pid)))
 
 
@@ -77,14 +81,14 @@ PUBLISHERS : list of publishers, each of which is a list (ADDRESS PORT)."
   (declare (ignore caller-id))
 
   (ros-debug (roslisp topic) "Publisher update ~a ~a" topic publishers)
-  (with-recursive-lock (*ros-lock*)
+  (with-recursive-lock-held (*ros-lock*)
     (update-publishers topic publishers)))
 
 (defun |getBusInfo| (caller-id)
   "getBusInfo XML-RPC method
 Used to get info about the node's connections (e.g., for rosnode info)"
   (ros-debug (roslisp slave) "Received call to getBusInfo from ~a" caller-id)
-  (with-recursive-lock (*ros-lock*)
+  (with-recursive-lock-held (*ros-lock*)
     (list 1 (format nil "getBusInfo call returning") 
           (nconc (publications-info) (subscriptions-info)))))
 
@@ -121,7 +125,7 @@ Notes
 2. This call does not actually set up the transport over the agreed-upon protocol.  In the TCP case, the subscriber must then connect to the given address and port over TCP, and send a string containing the topic name and MD5 sum."
   (declare (string topic) (sequence protocols))
   (ros-debug (roslisp slave request-topic) "Received call `requestTopic ~a ~a ~a" caller-id topic protocols)
-  (with-recursive-lock (*ros-lock*)
+  (with-recursive-lock-held (*ros-lock*)
     (if (find "TCPROS" protocols :key #'first :test #'string=)
         (if (hash-table-has-key *publications* topic)
             
@@ -176,7 +180,7 @@ Notes
                (mvbind (conn str) (subscribe-publisher pub topic)
                  (push (make-publisher-connection :publisher-socket conn :publisher-stream str :uri pub)
                        (publisher-connections subscription)))
-             (sb-bsd-sockets:connection-refused-error (c) (ros-debug (roslisp tcp) "Socket error ~a when attempting to subscribe to ~a; skipping" c pub)))
+             (connection-refused-error (c) (ros-debug (roslisp tcp) "Socket error ~a when attempting to subscribe to ~a; skipping" c pub)))
            )))
 
       ((not known) (list 0 (format nil "I'm not interested in topic ~a" topic) 0)))))

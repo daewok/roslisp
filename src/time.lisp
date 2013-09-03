@@ -54,7 +54,7 @@
       (if *last-clock*
 	  (rosgraph_msgs-msg:clock *last-clock*)
 	  (progn
-	    (unless (mutex-owner *debug-stream-lock*)
+	    (unless (lock-owner *debug-stream-lock*)
 	      (ros-debug (roslisp time) "Returning time of 0.0 as use_sim_time was true and no clock messages received"))
 	    0.0))
       (float (+ *time-base* (/ (- (get-internal-real-time) *internal-time-base*) internal-time-units-per-second)) 0.0L0)))

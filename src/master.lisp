@@ -78,7 +78,7 @@
                    (assert *master-uri* nil "Master uri not set")
                    (ros-debug (roslisp master) "Calling master with arguments `~a'" args)
                    (apply #'ros-rpc-call *master-uri* args))
-     (sb-bsd-sockets:connection-refused-error (,c)
+     (connection-refused-error (,c)
        (declare (ignorable ,c))
        ,@cleanup-forms)))
 

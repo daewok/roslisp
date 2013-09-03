@@ -41,6 +41,7 @@
 (in-package roslisp)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  #+sbcl
   (require 'sb-cltl2))
 
 (defmethod deserialize ((msg symbol) str)
@@ -159,23 +160,49 @@
                     (cdr (assoc
                           'type
                           (nth-value
-                           2 (sb-cltl2:variable-information msg env)))))))
+                           2 #+sbcl (sb-cltl2:variable-information msg env)
+						   #+allegro (sys:variable-information msg env)))))))
     (if (and msg-type (subtypep msg-type 'roslisp-msg-protocol:ros-message))
         (let* ((slot-symbol (msg-slot-symbol nil slot (symbol-package msg-type)))
                (slot-type (msg-slot-type msg-type slot-symbol)))
           `(the ,slot-type (slot-value ,msg ',slot-symbol)))
         expr)))
 
+(defun class-finalized-p (class)
+  #+sbcl (sb-mop:class-finalized-p class)
+  #+allegro (mop:class-finalized-p class)
+  #-(or allegro sbcl) (error 'simple-error "CLASS-FINALIZED-P not implemented for this Lisp."))
+
+(defun finalize-inheritance (class)
+  #+sbcl (sb-mop:finalize-inheritance class)
+  #+allegro (mop:finalize-inheritance class)
+  #-(or allegro sbcl) (error 'simple-error "FINALIZE-INHERITANCE not implemented for this Lisp."))
+
+(defun class-slots (class)
+  #+sbcl (sb-mop:class-slots class)
+  #+allegro (mop:class-slots class)
+  #-(or allegro sbcl) (error 'simple-error "CLASS-SLOTS not implemented for this Lisp."))
+
+(defun get-slot-definition-name-fn ()
+  #+sbcl #'sb-mop:slot-definition-name
+  #+allegro #'mop:slot-definition-name
+  #-(or allegro sbcl) (error 'simple-error "GET-SLOT-DEFINITION-NAME-FN not implemented for this Lisp."))
+
+(defun slot-definition-type (slot-definition)
+  #+sbcl (sb-mop:slot-definition-type slot-definition)
+  #+allegro (mop:slot-definition-type slot-definition)
+  #-(or allegro sbcl) (error 'simple-error "SLOT-DEFINITION-TYPE not implemented for this Lisp."))
+
 (defun msg-slot-type (class-name slot)
   (let ((class (find-class class-name)))
-    (unless (sb-mop:class-finalized-p class)
-      (sb-mop:finalize-inheritance class))
+    (unless (class-finalized-p class) 
+      (finalize-inheritance class))
     (let* ((slot-symbol (msg-slot-symbol nil slot
                                          (symbol-package class-name)))
-           (slot-definition (find slot-symbol (sb-mop:class-slots class)
-                                  :key #'sb-mop:slot-definition-name)))
+           (slot-definition (find slot-symbol (class-slots class)
+                                  :key (get-slot-definition-name-fn))))
       (when slot-definition
-        (sb-mop:slot-definition-type slot-definition)))))
+        (slot-definition-type slot-definition)))))
 
 (defun make-field-reader-with-type (value-sym type field-definition)
   (if (and type field-definition (subtypep type 'roslisp-msg-protocol:ros-message))
@@ -254,7 +281,9 @@ which causes more consing and is less performant."
                     (let ((type (cdr (assoc
                                       'type
                                       (nth-value
-                                       2 (sb-cltl2:variable-information msg env))))))
+                                       2
+									   #+sbcl (sb-cltl2:variable-information msg env)
+									   #+allegro (sys:variable-information msg env))))))
                       (when (symbolp type)
                         type))))
         (msg-sym (gensym "MSG")))

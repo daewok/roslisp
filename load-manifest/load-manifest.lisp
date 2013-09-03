@@ -199,7 +199,12 @@ to write stdout and stderr to, respectively. Returns the exit code."
   #+sbcl (let ((proc (sb-ext:run-program command args :search search :output output :error error)))
 		   (sb-ext:process-exit-code proc))
   #+allegro (let ((real-command (format nil "~a~{ ~a~}" command args)))
-			  (excl.osi::run-shell-command real-command :output output :error-output error))
+			  (multiple-value-bind (stdout stderr status) (excl.osi:command-output real-command :whole t)
+				(when output
+				  (format output "~a" stdout))
+				(when error
+				  (format error "~a" stderr))
+				status))
   #-(or sbcl allegro) (error 'simple-error "RUN-PROGRAM is not defined for this Lisp.")
   )
 

@@ -65,61 +65,56 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun ros-node-tcp-server (port)
-  "Return a passive socket that listens for connections on the given port.  The handler for incoming connections is (the function returned by) server-connection-handler."
-  (let ((socket (make-instance 'inet-socket :type :stream :protocol :tcp))
-        (ip-address #(0 0 0 0)))
-    (setf (sb-bsd-sockets:sockopt-reuse-address socket) t)
-    (socket-bind socket ip-address port)
-    (ros-debug (roslisp tcp) "Bound tcp listener ~a" socket)
-    (socket-listen socket 5)
-    (sb-sys:add-fd-handler (socket-file-descriptor socket)
-                           :input (server-connection-handler socket))
-    socket))
-
+  "Return a passive socket that listens for connections on the given port. The handler for incoming connections is server-connection-handler."
+  (let* ((ip-address #(0 0 0 0))
+		 (socket (socket-listen ip-address port :reuse-address t :backlog 5)))
+	(ros-debug (roslisp tcp) "Bound tcp listener ~a" socket)
+	;; Spin up a separate thread to handle incoming connections.
+	(make-thread #'(lambda () (server-connection-handler socket)) :name "roslisp node connection handler")
+	socket))
 
 (defun server-connection-handler (socket)
-  "Return the handler for incoming connections to this socket.  The handler accepts the connection, and decides whether its a topic or service depending on whether the header has a topic field, and passes it to handle-topic-connection or handle-service connection as appropriate.  If the header cannot be parsed or lacks the necessary fields, send an error header across the socket, close it, and print a warning message on this side."
-  #'(lambda (fd)
-      (declare (ignore fd))
-      (let* ((connection (socket-accept socket))
-             (stream (socket-make-stream connection :element-type '(unsigned-byte 8) :output t :input t :buffering :none)))
-        (flet ((close-connection (&key (abort t))
-               "Closes the connection when an error occurred."
-               ;; We first close the stream with the abort parameter
-               ;; since SOCKET-CLOSE does not allow to specify
-               ;; abort. This function is ment to be used in error
-               ;; handling since SOCKET-CLOSE currently has a nasty
-               ;; bug that prevents it from closing broken
-               ;; connections.
-               (close stream :abort abort)
-               (socket-close connection)))
-          (ros-debug (roslisp tcp) "Accepted TCP connection ~a" connection)
-        
-          (mvbind (header parse-error) (ignore-errors (parse-tcpros-header stream))
-            ;; Any errors guaranteed to be handled in the first cond clause
+  "Handle incoming connections to this socket.  The handler accepts the connection, and decides whether its a topic or service depending on whether the header has a topic field, and passes it to handle-topic-connection or handle-service connection as appropriate.  If the header cannot be parsed or lacks the necessary fields, send an error header across the socket, close it, and print a warning message on this side."
+  (loop
+	 (let* ((connection (socket-accept socket :element-type '(unsigned-byte 8)))
+			(stream (socket-stream connection)))
+	   (flet ((close-connection (&key (abort t))
+				"Closes the connection when an error occurred."
+				;; We first close the stream with the abort parameter
+				;; since SOCKET-CLOSE does not allow to specify
+				;; abort. This function is ment to be used in error
+				;; handling since SOCKET-CLOSE currently has a nasty
+				;; bug that prevents it from closing broken
+				;; connections.
+				(close stream :abort abort)
+				(socket-close connection)))
+		 (ros-debug (roslisp tcp) "Accepted TCP connection ~a" connection)
+		 
+		 (mvbind (header parse-error) (ignore-errors (parse-tcpros-header stream))
+		   ;; Any errors guaranteed to be handled in the first cond clause
 
-            (ros-debug (roslisp tcp) "Parsed header: ~a ~:[~;Parse error ~:*~a~]" header parse-error)
-            (handler-case
-                (cond
-                  ((null header)
-                   (ros-info (roslisp tcp) "Ignoring connection attempt due to error parsing header: '~a'" parse-error)
-                   (socket-close connection))
-                  ((assoc "service" header :test #'equal)
-                   (handle-service-connection header connection stream))
-                  ((equal (cdr (assoc "probe" header :test #'equal)) "1")
-                   (ros-warn roslisp "Unexpectedly received a tcpros connection with probe set to 1.  Closing connection.")
-                   (socket-close connection))
-                  ((assoc "topic" header :test #'equal)
-                   (handle-topic-connection header connection stream))
-                  )
-              (malformed-tcpros-header (c)
-                (send-tcpros-header stream "error" (msg c))
-                (warn "Connection server received error ~a when trying to parse header ~a.  Ignoring this connection attempt." (msg c) header)
-                (close-connection))
-              (stream-error (c)
-                (declare (ignore c))                
-                (ros-debug (roslisp tcp) "stream error on connection to service client (could be a probe)")
-                (close-connection))))))))
+		   (ros-debug (roslisp tcp) "Parsed header: ~a ~:[~;Parse error ~:*~a~]" header parse-error)
+		   (handler-case
+			   (cond
+				 ((null header)
+				  (ros-info (roslisp tcp) "Ignoring connection attempt due to error parsing header: '~a'" parse-error)
+				  (socket-close connection))
+				 ((assoc "service" header :test #'equal)
+				  (handle-service-connection header connection stream))
+				 ((equal (cdr (assoc "probe" header :test #'equal)) "1")
+				  (ros-warn roslisp "Unexpectedly received a tcpros connection with probe set to 1.  Closing connection.")
+				  (socket-close connection))
+				 ((assoc "topic" header :test #'equal)
+				  (handle-topic-connection header connection stream))
+				 )
+			 (malformed-tcpros-header (c)
+			   (send-tcpros-header stream "error" (msg c))
+			   (warn "Connection server received error ~a when trying to parse header ~a.  Ignoring this connection attempt." (msg c) header)
+			   (close-connection))
+			 (stream-error (c)
+			   (declare (ignore c))                
+			   (ros-debug (roslisp tcp) "stream error on connection to service client (could be a probe)")
+			   (close-connection))))))))
 
 
 
@@ -196,7 +191,7 @@
 
               ;; Spawn a dedicated thread to deserialize messages off the socket onto the queue
               (let ((connection-thread
-                     (sb-thread:make-thread
+                     (make-thread
                       #'(lambda ()
                           (block thread-block
                             (unwind-protect
@@ -228,8 +223,10 @@
                       :name (format nil "Roslisp thread for subscription to topic ~a published from ~a:~a" 
                                     topic hostname port)
                       )))
-                (assert (eq (mutex-owner *ros-lock*) *current-thread*)
+				
+                (assert (eq (lock-owner *ros-lock*) (current-thread))
                         nil "Code assumption violated; not holding lock in setup-tcpros-subscription")
+
                 (ros-debug (roslisp deserialization-thread) "Adding deserialization thread for connection on topic ~a to ~a:~a" topic hostname port)
                 (push connection-thread *deserialization-threads*)))))
 
@@ -242,6 +239,31 @@
 
 
 (defvar *stream-error-in-progress* nil)
+
+(defun write-sequence-to-stream (data-strm str)
+  #+sbcl
+  (sb-sys:without-interrupts
+	(write-sequence (serialized-message data-strm) str :end (file-position data-strm))
+	;; Technically, force-output isn't supposed to be called on binary streams...
+	(force-output str)
+	1 ;; Returns number of messages written 
+	)
+  #+(and allegro (not smp-macros))
+  (excl:without-interrupts
+	(write-sequence (serialized-message data-strm) str :end (file-position data-strm))
+	;; Technically, force-output isn't supposed to be called on binary streams...
+	(force-output str)
+	1 ;; Returns number of messages written 
+	)
+  #+(and allegro smp-macros)
+  (excl:with-delayed-interrupts
+	(write-sequence (serialized-message data-strm) str :end (file-position data-strm))
+	;; Technically, force-output isn't supposed to be called on binary streams...
+	(force-output str)
+	1 ;; Returns number of messages written 
+	)
+  #-(or sbcl allegro)
+  (error 'simple-error "WRITE-SEQUENCE-TO-STREAM not implemented for this Lisp."))
 
 (defun tcpros-write (msg str)
   (or
@@ -257,13 +279,8 @@
                 (data-strm (make-instance 'msg-serialization-stream :buffer-size (+ msg-size 4))))
            (serialize-int msg-size data-strm)
            (serialize msg data-strm)
-           (sb-sys:without-interrupts
-             (write-sequence (serialized-message data-strm) str :end (file-position data-strm))
-             ;; Technically, force-output isn't supposed to be called on binary streams...
-             (force-output str)
-             1 ;; Returns number of messages written 
-             ))
-       ((or sb-bsd-sockets:socket-error stream-error) (c)
+		   (write-sequence-to-stream data-strm str))
+       ((or socket-error stream-error) (c)
          (unless *stream-error-in-progress*
            (let ((*stream-error-in-progress* t))
              (ros-debug (roslisp tcp) "Received error ~a when writing to ~a.  Skipping from now on." c str)))
@@ -295,14 +312,15 @@
            (unless is-probe
              (handle-single-service-request stream (service-request-class service) 
                                             (service-callback service)))
-        (sb-thread:make-thread
-         #'(lambda ()
-             (sleep 10.0)
-             (ros-debug (roslisp service) "In service connection cleanup")
-             (when (socket-open-p connection)
-               (ros-debug (roslisp service) "Connection for call to ~a still open after 10 seconds; closing" 
-                          service-name)
-               (socket-close connection))))))))
+        ;; (make-thread
+        ;;  #'(lambda ()
+        ;;      (sleep 10.0)
+        ;;      (ros-debug (roslisp service) "In service connection cleanup")
+        ;;      (when (socket-open-p connection)
+        ;;        (ros-debug (roslisp service) "Connection for call to ~a still open after 10 seconds; closing" 
+        ;;                   service-name)
+        ;;        (socket-close connection))))
+		))))
 
 
 

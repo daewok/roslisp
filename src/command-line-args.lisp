@@ -80,7 +80,7 @@
   "Postcondition: the variables *remapped-names*, *namespace*, and *ros-node-name* are set based on the argument list and the environment variable ROS_NAMESPACE as per the ros command line protocol.  Also, arguments of the form _foo:=bar are interpreted by setting private parameter foo equal to bar (currently bar is just read using the lisp reader; it should eventually use yaml conventions)"
   (when (stringp args)
     (setq args (tokens args)))
-  (setq *namespace* (postprocess-namespace (or (sb-ext:posix-getenv "ROS_NAMESPACE") "/"))
+  (setq *namespace* (postprocess-namespace (or (getenv "ROS_NAMESPACE") "/"))
         *ros-node-name* (compute-node-name name))
   (let ((remappings
 	 (mapcan #'(lambda (s) (mvbind (lhs rhs) (parse-remapping s) (when lhs (list (list lhs rhs))))) 

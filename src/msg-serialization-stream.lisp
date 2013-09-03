@@ -39,7 +39,7 @@
 
 (in-package :roslisp)
 
-(defclass msg-serialization-stream (sb-gray:fundamental-binary-output-stream)
+(defclass msg-serialization-stream (fundamental-binary-output-stream)
   ((data-buffer :reader serialized-message)
    (position :initform 0)))
 
@@ -51,12 +51,13 @@
 (defmethod stream-element-type ((strm msg-serialization-stream))
   (array-element-type (serialized-message strm)))
 
-(defmethod sb-gray:stream-file-position ((strm msg-serialization-stream) &optional position)
-  (if position
-      (setf (slot-value strm 'position) position)
-      (slot-value strm 'position)))
+(defmethod (setf stream-file-position) (position (strm msg-serialization-stream))
+  (setf (slot-value strm 'position) position))
 
-(defmethod sb-gray:stream-write-byte ((strm msg-serialization-stream) integer)
+(defmethod stream-file-position ((strm msg-serialization-stream))
+  (slot-value strm 'position))
+
+(defmethod stream-write-byte ((strm msg-serialization-stream) integer)
   (declare (type (unsigned-byte 8) integer))
   (with-slots (data-buffer position) strm
     (setf (aref data-buffer position) integer)

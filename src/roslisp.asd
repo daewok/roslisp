@@ -30,9 +30,11 @@
    )
 	  
 
-  :depends-on (:s-xml :s-xml-rpc :sb-bsd-sockets
+  :depends-on (:s-xml :s-xml-rpc
                :rosgraph_msgs-msg :roslisp-msg-protocol
                :ros-load-manifest
-               :roslisp-utils :std_srvs-srv))
+               :roslisp-utils :std_srvs-srv
+			   :bordeaux-threads :trivial-timers
+			   :usocket :trivial-gray-streams))
 
 ;;;; eof

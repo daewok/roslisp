@@ -39,10 +39,18 @@
 
 (in-package :roslisp)
 
+(eval-when (load eval compile)
+  #+:allegro (require :datetime))
+
+(defun get-command-line-args ()
+  #+sbcl (sb-ext:*posix-argv*)
+  #+allegro (sys:command-line-arguments)
+  #-(or sbcl allegro)
+  (error 'simple-error "GET-COMMAND-LINE-ARGS is not implemented for this Lisp."))
 
 (defun start-ros-node (name &key (xml-rpc-port 8001 xml-port-supp) (pub-server-port 7001 pub-port-supp) 
                        (master-uri (make-uri "127.0.0.1" 11311) master-supplied) 
-                       (anonymous nil) (cmd-line-args (rest sb-ext:*posix-argv*))
+                       (anonymous nil) (cmd-line-args (rest (get-command-line-args)))
                        &allow-other-keys)
   "Start up the ROS Node with the given name and master URI.  Reset any stored state left over from previous invocations.
 
@@ -62,9 +70,16 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
     (shutdown-ros-node))
   
   (when anonymous
+	#+sbcl
     (mvbind (success s ms) (sb-unix:unix-gettimeofday)
       (declare (ignore success))
-      (setq name (format nil "~a_~a_~a" name ms s))))
+      (setq name (format nil "~a_~a_~a" name ms s)))
+	#+allegro
+	(let* ((dt (util.date-time:ut-to-date-time (get-universal-time)))
+		   (sec (util.date-time:date-time-second dt))
+		   (min (util.date-time:date-time-minute dt))
+		   (hour (util.date-time:date-time-hour dt)))
+	  (setq name (format nil "~a_~a_~a" name (random 100) (+ (* 60 min) (* 60 60 hour) sec)))))
 
   (let ((params (handle-command-line-arguments name cmd-line-args)))
 
@@ -76,7 +91,7 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
 
     ;; Deal with the master uri 
     (unless master-supplied      
-      (setq master-uri (or *default-master-uri* (sb-ext:posix-getenv "ROS_MASTER_URI")))
+      (setq master-uri (or *default-master-uri* (getenv "ROS_MASTER_URI")))
       (unless (and (stringp master-uri) (> (length master-uri) 0))
         (error "Master uri needs to be supplied either as an argument to start-ros-node, or through the environment variable ROS_MASTER_URI, or by setting the lisp variable *default-master-uri*")))
 
@@ -108,9 +123,9 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
     
 
     ;; Spawn a thread that will start up the listeners, then run the event loop
-    (with-recursive-lock (*ros-lock*)
+    (with-recursive-lock-held (*ros-lock*)
       (setf *event-loop-thread*
-      (sb-thread:make-thread 
+      (make-thread 
        #'(lambda ()
 
            (when (eq *node-status* :running) 
@@ -120,12 +135,12 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
            ;; Start publication and xml-rpc servers.  
            (mvbind (srv sock) (start-xml-rpc-server :port 0)
              (setq *xml-server* srv
-                   xml-rpc-port (nth-value 1 (sb-bsd-sockets:socket-name sock))))
+                   xml-rpc-port (get-local-port sock)))
            (ros-debug (roslisp top) "Started XML-RPC server on port ~a" xml-rpc-port)
 
            (setq *tcp-server-hostname* (hostname)
                  *tcp-server* (ros-node-tcp-server 0)
-                 pub-server-port (nth-value 1 (sb-bsd-sockets:socket-name *tcp-server*)))
+                 pub-server-port (get-local-port *tcp-server*))
            (ros-debug (roslisp top) "Started tcpros server on port ~a" pub-server-port)
 
            
@@ -140,7 +155,7 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
                  *deserialization-threads* nil
                  )
 
-           (pushnew #'maybe-shutdown-ros-node sb-ext:*exit-hooks*)
+           #+sbcl (pushnew #'maybe-shutdown-ros-node sb-ext:*exit-hooks*)
 
            ;; Finally, start the serve-event loop
            (event-loop))
@@ -190,7 +205,7 @@ Assuming spin is not true, this call will return the return value of the final s
 (defun shutdown-ros-node ()
   "Shutdown-ros-node.  Set the status to shutdown, close all open sockets and XML-RPC servers, and unregister all publications, subscriptions, and services with master node.  Finally, if *running-from-command-line* is true, exit lisp."
   (ros-debug (roslisp top) "Acquiring lock")
-  (with-recursive-lock (*ros-lock*)
+  (with-recursive-lock-held (*ros-lock*)
     (unless (eq *node-status* :shutdown)
       (ros-debug (roslisp top) "Initiating shutdown")
       (setf *node-status* :shutdown)
@@ -209,19 +224,19 @@ Assuming spin is not true, this call will return the return value of the final s
         (dolist (sub (subscriber-connections pub))
           (handler-case
               (close-socket (subscriber-socket sub))
-            (sb-int:simple-stream-error (c)
+            (simple-stream-error (c)
               (ros-debug (roslisp top) "Received stream error ~a when attempting to close socket ~a.  Skipping." c (subscriber-socket sub))))))
 
       (do-hash (topic sub *subscriptions*)
         (protected-call-to-master ("unregisterSubscriber" topic *xml-rpc-caller-api*) c
           (ros-warn (roslisp) "Could not contact master when unsubscribing from ~a during shutdown: ~a" topic c))
-        (handler-case (terminate-thread (topic-thread sub))
+        (handler-case (destroy-thread (topic-thread sub))
           (interrupt-thread-error (e)
             (declare (ignore e)))))
 
       (dolist (thread *deserialization-threads*)
         (ros-debug (roslisp deserialization-thread) "Killing deserialization thread")
-        (ignore-errors (terminate-thread thread)))
+        (ignore-errors (destroy-thread thread)))
 
       ;; Unregister services
       (do-hash (name s *services*)
@@ -236,21 +251,22 @@ Assuming spin is not true, this call will return the return value of the final s
 
       ;; wait nicely for end of event loop, which was notified by setting *node-status* to shutdown
       (dotimes (wait-it 6)
-        (when (sb-thread:thread-alive-p *event-loop-thread*)
+        (when (thread-alive-p *event-loop-thread*)
           (sleep 0.5)))
-      (when (sb-thread:thread-alive-p *event-loop-thread*)
+      (when (thread-alive-p *event-loop-thread*)
         ;; try killing event-loop thread (may take time)
-        (sb-thread:terminate-thread *event-loop-thread*)
+        (destroy-thread *event-loop-thread*)
         (dotimes (wait-it 6)
-          (when (sb-thread:thread-alive-p *event-loop-thread*)
+          (when (thread-alive-p *event-loop-thread*)
             (sleep 0.5))))
-      (when (sb-thread:thread-alive-p *event-loop-thread*)
+      (when (thread-alive-p *event-loop-thread*)
         (error "Event-loop thread cannot be terminated"))
       (setf *event-loop-thread* nil)
       
       (ros-info (roslisp top) "Shutdown complete")
       (close *ros-log-stream*)
-      (when *running-from-command-line* (sb-ext:quit)))))
+      (when *running-from-command-line* #+sbcl (sb-ext:quit)
+			#+allegro (excl:exit)))))
 
 (defun maybe-shutdown-ros-node ()
   (unless (eq *node-status* :shutdown)
