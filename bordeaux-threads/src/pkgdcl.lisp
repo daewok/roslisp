@@ -15,6 +15,7 @@
            #:release-recursive-lock #:with-recursive-lock-held
 
            #:make-condition-variable #:condition-wait #:condition-notify
+           #:condition-broadcast
 
            #:with-timeout #:timeout
 

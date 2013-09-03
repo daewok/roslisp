@@ -44,6 +44,9 @@ Distributed under the MIT license (see LICENSE file)
 (defun condition-notify (condition-variable)
   (mp:condition-variable-signal condition-variable))
 
+(defun condition-broadcast (condition-variable)
+  (mp:condition-variable-broadcast condition-variable))
+
 (defun thread-yield ()
   (mp:process-allow-schedule))
 

@@ -347,7 +347,7 @@ If FN is a symbol, it's replaced by (function FN).
 (defvar *do-every-nth-lock* (make-lock "do-every-nth"))
 
 (defun counter-value (id)
-  (with-mutex (*do-every-nth-lock*)
+  (with-lock-held (*do-every-nth-lock*)
     (let ((v (gethash id *do-every-nth-table*)))
       (setf (gethash id *do-every-nth-table*) (if v (1+ v) 1)))))
 

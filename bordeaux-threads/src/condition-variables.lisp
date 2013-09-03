@@ -32,3 +32,7 @@ Distributed under the MIT license (see LICENSE file)
   (check-type condition-variable condition-var)
   (with-lock-held ((condition-var-lock condition-variable))
     (setf (condition-var-active condition-variable) t)))
+
+(defun condition-broadcast (condition-variable)
+  (error 'simple-error "This Lisp does not have an implementation of
+  CONDITION-BROADCAST in Bordeaux-threads yet."))

@@ -94,7 +94,7 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
       (cond
 	((queue-empty q)
 	 (setf (head q) (setf (tail q) new-pair))
-	 (condition-notify (read-cv q) 1))
+	 (condition-notify (read-cv q)))
 	(t
 	 (setf (tail q)
 	       (setf (cdr (tail q))
@@ -110,7 +110,7 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
 
 (defun dequeue (q)
   "dequeue QUEUE.  Return 1) the first item on the queue if it exists (in this case the item is removed from the queue) 2) t if the queue was nonempty, nil otherwise.  See also dequeue-wait."
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (decf (queue-size q))
     (if (queue-empty q)
 	(values nil nil)
@@ -121,7 +121,7 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
 (defun dequeue-wait (q &key (allow-wakeup nil))
   "dequeue-wait QUEUE &key (ALLOW-WAKEUP t).  Sleep till QUEUE is nonempty, then return the first item and t, or wakeup is called on the queue, in which case return nil and nil. If there are multiple threads doing this, there is no guarantee about which enqueuing this one will wake up upon.  However, the overall ordering of dequeued items will be FIFO.  If wakeup is called when ALLOW-WAKEUP is nil, then an assert happens."
   ;; TODO wakeup isn't working
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (loop
        (if (queue-empty q)
 	   (condition-wait (read-cv q) (lock q))
@@ -135,17 +135,17 @@ Makes a queue out of SEQUENCE as if enqueueing the elements in sequence."
 (defun wakeup (q)
   "Wakeup all dequeuers and tell them they aren't getting anything."
   ;; TODO wakeup isn't working
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (condition-broadcast (read-cv q))))
 
 (defun peek-front (q)
   "peek-front QUEUE.  Has the same return values as dequeue, but does not modify the queue."
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (if (queue-empty q)
 	(values nil nil)
 	(car (head q)))))
 
 (defmethod print-object ((q queue) str)
-  (with-recursive-lock ((lock q))
+  (with-recursive-lock-held ((lock q))
     (print-unreadable-object (q str :type t :identity nil)
       (format str "with elements ~a" (head q)))))
