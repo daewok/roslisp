@@ -33,6 +33,9 @@ Distributed under the MIT license (see LICENSE file)
   `(mp:with-process-lock (,place :timeout ,timeout)
      ,@body))
 
+(defun lock-owner (lock)
+  (mp:process-lock-locker lock))
+
 ;;; Resource contention: condition variables
 
 (defun make-condition-variable (&key name)

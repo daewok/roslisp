@@ -57,6 +57,9 @@ Distributed under the MIT license (see LICENSE file)
   `(sb-thread:with-recursive-lock (,place)
      ,@body))
 
+(defun lock-owner (lock)
+  (sb-thread:mutex-owner lock))
+
 ;;; Resource contention: condition variables
 
 (defun make-condition-variable (&key name)

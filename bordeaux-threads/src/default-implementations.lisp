@@ -162,6 +162,11 @@ WITH-LOCK-HELD etc etc"
           (locally ,@body)
        (release-recursive-lock ,place))))
 
+(defdfun lock-owner (lock)
+    "Return the thread that owns LOCK."
+  (declare (ignore lock))
+  (error (make-threading-support-error)))
+
 ;;; Resource contention: condition variables
 
 ;;; A condition variable provides a mechanism for threads to put

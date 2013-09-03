@@ -12,7 +12,7 @@
 
            #:make-lock #:acquire-lock #:release-lock #:with-lock-held
            #:make-recursive-lock #:acquire-recursive-lock
-           #:release-recursive-lock #:with-recursive-lock-held
+           #:release-recursive-lock #:with-recursive-lock-held #:lock-owner
 
            #:make-condition-variable #:condition-wait #:condition-notify
            #:condition-broadcast
