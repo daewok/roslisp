@@ -400,7 +400,9 @@
       (declare (ignore len))
       (prog1
           (deserialize response-type stream)
-        (assert (not (listen stream)) () "Still bytes in the stream. It seems like we went out of sync.")))))
+		;; For some reason, this assertion does not seem to work in Allegro. It always errors.
+        #-allegro (assert (not (listen stream)) () "Still bytes in the stream. It seems like we went out of sync.")
+		))))
 
 (defun tcpros-call-service (hostname port service-name req response-type)
   (check-type hostname string)

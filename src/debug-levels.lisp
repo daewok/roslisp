@@ -51,7 +51,7 @@
   (or (gethash name *debug-levels*) 
       (if name
 	  (debug-level (cdr name))
-	  (level-code :debug))))
+	  (level-code :info))))
       
 
 (defun debug-topic-param (name)

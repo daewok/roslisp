@@ -40,7 +40,7 @@
 
 (in-package roslisp)
 
-(defparameter *xmlrpc-timeout* 1.0 "How many seconds to wait until giving up")
+(defparameter *xmlrpc-timeout* 2.0 "How many seconds to wait until giving up")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Slave API - implements XML-RPC calls to this node from
@@ -203,4 +203,5 @@ Right now, the transport must be TCPROS and the return value is the socket."
                 (setup-tcpros-subscription address port topic)
                 (ros-error (roslisp tcp) "Protocol ~a did not equal TCPROS... skipping connection" protocol))))
       (function-timeout () ;;just retry
+		(ros-debug (roslisp topic) "Timeout connecting to ~a at ~a" topic uri)
         nil))))
