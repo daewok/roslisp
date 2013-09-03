@@ -16,6 +16,7 @@
    #+ccl ccl 
    #+lispworks mp
    #+lispworks comm
+   usocket
    s-xml 
    s-base64)
   (:export

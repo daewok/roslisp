@@ -29,6 +29,6 @@
                  (:file "sysdeps" :depends-on ("package"))
                  (:file "xml-rpc" :depends-on ("package" "sysdeps" "base64"))
                  (:file "extensions" :depends-on ("package" "xml-rpc")))))
-  :depends-on (:s-xml #+sbcl :sb-bsd-sockets))
+  :depends-on (:s-xml #+sbcl :sb-bsd-sockets :usocket))
 
 ;;;; eof

@@ -23,6 +23,13 @@
   #+lispworks
   `(with-open-stream (,var (comm:open-tcp-stream ,host ,port))
     ,@body)
+  #+allegro 
+  (let ((socket-object (gensym)))
+	`(let* ((,socket-object (socket-connect ,host ,port :protocol :stream))
+			(,var (socket-stream ,socket-object)))
+	   (unwind-protect 
+			(progn ,@body)
+		 (close ,var))))
   #+sbcl
   (let ((socket-object (gensym)))
     `(let ((,socket-object (make-instance 'sb-bsd-sockets:inet-socket
@@ -44,6 +51,7 @@
   "Create and run a new process with name, executing function on arguments"
   #+lispworks (apply #'mp:process-run-function name '(:priority 3) function arguments)
   #+openmcl (apply #'ccl:process-run-function name function arguments)
+  #+allegro (apply #'mp:process-run-function name function arguments)
   #+sbcl (declare (ignore name))
   #+sbcl (apply function arguments))
 
@@ -78,6 +86,17 @@
                           (funcall connection-handler client-stream))) 
                      (close server-socket)))))
               name)
+  #+allegro (let ((server-socket (socket-listen #(0 0 0 0) port :reuse-address t :backlog 15)))
+			  (mp:process-run-function
+			   name
+			   #'(lambda ()
+				   (unwind-protect
+						(loop
+						   (let* ((client-socket (socket-accept server-socket))
+								  (client-stream (socket-stream client-socket)))
+							 (funcall connection-handler client-stream)))
+					 (socket-close server-socket))))
+			  (values name server-socket))
   #+sbcl (let* ((socket
                  (make-instance 'sb-bsd-sockets:inet-socket :type :stream
                                 :protocol :tcp))
@@ -111,6 +130,11 @@
                               :key #'ccl:process-name :test #'string-equal)))
     (when server-process
       (ccl:process-kill server-process)))
+  #+allegro
+  (let ((server-process (find name sys:*all-processes*
+                              :test #'string-equal :key #'mp:process-name)))
+    (when server-process
+      (mp:process-kill server-process)))
   #+sbcl
   (progn
     (destructuring-bind (name socket handler)
