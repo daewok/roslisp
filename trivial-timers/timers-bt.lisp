@@ -254,7 +254,7 @@ expiry."
   (with-scheduler-lock ()
     (setf (%timer-expire-time timer) (if absolute-p
 					 time
-					 (+ time (get-universal-time)))
+					 (+ (round time) (get-universal-time)))
           (%timer-repeat-interval timer) repeat-interval)
     (%schedule-timer timer)))
 
