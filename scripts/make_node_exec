@@ -1,5 +1,25 @@
 #!/bin/bash
 
+if [ "$ROS_LISP_IMPL" = "allegro" ]; then
+
+# We assume alisp is on the path for now...
+
+ALISP_CMD=alisp
+
+if [[ $# == 4 ]]; then
+  pkg=$1
+  system=$2
+  entry=$3
+  output=$4
+  
+  $ALISP_CMD -batch -- $pkg $system $entry $output < `rospack find roslisp`/scripts/make-allegro-roslisp-exec.lisp || exit $?
+else
+    echo "Usage: make_node_exec <pkg> <system> <entry> <output>"
+    exit 1
+fi
+
+else
+
 ROS_SBCL_PATH=`rospack find sbcl`
 if [ -n "$ROS_SBCL_PATH" ]; then
   SBCL_CMD=$ROS_SBCL_PATH/scripts/run-sbcl.sh
@@ -33,4 +53,6 @@ EOF
 else
     echo "Usage: make_node_exec <pkg> <system> <entry> <output>"
     exit 1
+fi
+
 fi
