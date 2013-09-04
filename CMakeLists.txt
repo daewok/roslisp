@@ -13,7 +13,11 @@ foreach(dir
     src
     s-xml
     s-xml-rpc
-    utils)
+    utils
+	bordeaux-threads
+	trivial-gray-streams
+	trivial-timers
+	usocket)
   install(DIRECTORY ${dir}
       DESTINATION share/${PROJECT_NAME}
       PATTERN ".svn" EXCLUDE
