@@ -122,45 +122,39 @@ CMD-LINE-ARGS is the list of command line arguments (defaults to argv minus its 
     ;; Done setting up master connection
     
 
-    ;; Spawn a thread that will start up the listeners, then run the event loop
+    ;; Start up all the listeners
     (with-recursive-lock-held (*ros-lock*)
-      (setf *event-loop-thread*
-      (make-thread 
-       #'(lambda ()
 
-           (when (eq *node-status* :running) 
-             (error "Can't start node as status already equals running.  Call shutdown-ros-node first."))
-
-
-           ;; Start publication and xml-rpc servers.  
-           (mvbind (srv sock) (start-xml-rpc-server :port 0)
-             (setq *xml-server* srv
-                   xml-rpc-port (get-local-port sock)))
-           (ros-debug (roslisp top) "Started XML-RPC server on port ~a" xml-rpc-port)
-
-           (setq *tcp-server-hostname* (hostname)
-                 *tcp-server* (ros-node-tcp-server 0)
-                 pub-server-port (get-local-port *tcp-server*))
-           (ros-debug (roslisp top) "Started tcpros server on port ~a" pub-server-port)
-
-           
-           (setq *tcp-server-port* pub-server-port
-                 *broken-socket-streams* (make-hash-table :test #'eq)
-                 *service-uri* (format nil "rosrpc://~a:~a" *tcp-server-hostname* *tcp-server-port*)
-                 *xml-rpc-caller-api* (format nil "http://~a:~a" (hostname) xml-rpc-port)
-                 *publications* (make-hash-table :test #'equal)
-                 *subscriptions* (make-hash-table :test #'equal)
-                 *services* (make-hash-table :test #'equal)
-                 *node-status* :running
-                 *deserialization-threads* nil
-                 )
-
-           #+sbcl (pushnew #'maybe-shutdown-ros-node sb-ext:*exit-hooks*)
-
-           ;; Finally, start the serve-event loop
-           (event-loop))
-       :name "ROSLisp event loop"))
-
+	  (when (eq *node-status* :running) 
+		(error "Can't start node as status already equals running.  Call shutdown-ros-node first."))
+	  
+	  
+	  ;; Start publication and xml-rpc servers.  
+	  (mvbind (srv sock) (start-xml-rpc-server :port 0)
+		(setq *xml-server* srv
+			  xml-rpc-port (get-local-port sock)))
+	  (ros-debug (roslisp top) "Started XML-RPC server on port ~a" xml-rpc-port)
+	  
+	  (setq *tcp-server-hostname* (hostname)
+			*tcp-server* (ros-node-tcp-server 0)
+			pub-server-port (get-local-port *tcp-server*))
+	  (ros-debug (roslisp top) "Started tcpros server on port ~a" pub-server-port)
+	  
+	  
+	  (setq *tcp-server-port* pub-server-port
+			*broken-socket-streams* (make-hash-table :test #'eq)
+			*service-uri* (format nil "rosrpc://~a:~a" *tcp-server-hostname* *tcp-server-port*)
+			*xml-rpc-caller-api* (format nil "http://~a:~a" (hostname) xml-rpc-port)
+			*publications* (make-hash-table :test #'equal)
+			*subscriptions* (make-hash-table :test #'equal)
+			*services* (make-hash-table :test #'equal)
+			*node-status* :running
+			*deserialization-threads* nil
+			)
+	  
+	  #+sbcl (pushnew #'maybe-shutdown-ros-node sb-ext:*exit-hooks*)
+	  
+	  
       ;; There's no race condition - if this test and the following advertise call all happen before the event-loop starts,
       ;; things will just queue up
       (spin-until (eq *node-status* :running) 1))
@@ -249,20 +243,6 @@ Assuming spin is not true, this call will return the return value of the final s
       ;; Unset variables that will be used upon next startup
       (setq *ros-log-location* nil)
 
-      ;; wait nicely for end of event loop, which was notified by setting *node-status* to shutdown
-      (dotimes (wait-it 6)
-        (when (thread-alive-p *event-loop-thread*)
-          (sleep 0.5)))
-      (when (thread-alive-p *event-loop-thread*)
-        ;; try killing event-loop thread (may take time)
-        (destroy-thread *event-loop-thread*)
-        (dotimes (wait-it 6)
-          (when (thread-alive-p *event-loop-thread*)
-            (sleep 0.5))))
-      (when (thread-alive-p *event-loop-thread*)
-        (error "Event-loop thread cannot be terminated"))
-      (setf *event-loop-thread* nil)
-      
       (ros-info (roslisp top) "Shutdown complete")
       (close *ros-log-stream*)
       (when *running-from-command-line* #+sbcl (sb-ext:quit)
