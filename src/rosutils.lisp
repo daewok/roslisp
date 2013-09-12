@@ -210,7 +210,8 @@ Each service type is a string of form package/service.  Loads the corresponding 
 (defun standalone-exec-debug-hook (a b)
   (declare (ignore b))
   (when (eq *node-status* :running)
-    (invoke-restart 'shutdown-ros-node a)
+	(format t "About to shutdown~:[~; due to condition ~:*~a~]" a)
+    (shutdown-ros-node)
     ))
 
 

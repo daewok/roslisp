@@ -27,11 +27,9 @@
 	  (format strm "(in-package :cl-user)~%")
 	  (format strm
 			  "(defun start-ros-app ()
-  (handler-bind ((interrupt-signal #'(lambda (c)
-                                       (format t \"Shutting Down.\")
-									   (invoke-restart 'roslisp:shutdown-ros-node)
-									   (exit))))
-	(funcall (symbol-function '~a))))" entry))
+  (setf cl:*debugger-hook* #'roslisp:standalone-exec-debug-hook
+        roslisp:*running-from-command-line* t)
+  (funcall (symbol-function '~a)))" entry))
 
 
 
