@@ -297,6 +297,8 @@ package."
       (append asdf:*system-definition-search-functions*
               '(asdf-ros-search)))
 
+(pushnew :ros-load-manifest *features*)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; top level
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
