@@ -45,7 +45,8 @@
 	  '(:process :list2 :seq2)
 	  '(:defsys)
 	  '(:asdf)
-	  (list (pathname "~/clinit.cl"))
+	  (list (or (probe-file (pathname "~/clinit.cl"))
+				(probe-file (pathname "~/.clinit.cl"))))
 	  fasls
 	  (list tmp-file))
 	 :restart-init-function nil
